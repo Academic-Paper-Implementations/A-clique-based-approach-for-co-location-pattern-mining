@@ -1,133 +1,103 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import List, Optional, Set, Tuple
+from typing import List, Tuple, Set
 
 from .data import Instance, SpatialDataset
 from .neighborhood import NeighborhoodList
 
 
-@dataclass
-class NTreeNode:
-    instance: Instance
-    parent: Optional["NTreeNode"] = None
-    children: List["NTreeNode"] = field(default_factory=list)
-
-    def path_instances(self) -> Tuple[Instance, ...]:
-        path: List[Instance] = []
-        cur: Optional[NTreeNode] = self
-        while cur is not None:
-            path.append(cur.instance)
-            cur = cur.parent
-        return tuple(sorted(path))
-
-
-class NTree:
-    def __init__(self) -> None:
-        self.heads: List[NTreeNode] = []
-
-    def add_head(self, inst: Instance) -> NTreeNode:
-        node = NTreeNode(instance=inst)
-        self.heads.append(node)
-        return node
-
-    def leaves(self) -> List[NTreeNode]:
-        result: List[NTreeNode] = []
-
-        def dfs(node: NTreeNode) -> None:
-            if not node.children:
-                result.append(node)
-            else:
-                for ch in node.children:
-                    dfs(ch)
-
-        for h in self.heads:
-            dfs(h)
-        return result
-
-
-def _build_for_head(head_node: NTreeNode, nbs: NeighborhoodList) -> None:
+def _neighbors_in_set(
+    s: Instance,
+    cand: Set[Instance],
+    nbs: NeighborhoodList
+) -> Set[Instance]:
     """
-    Xây N-tree cho H_{head}-Cliques theo 4 strategy, giống Example 6.
+    Trả về các láng giềng của s nằm trong tập cand.
+    Dùng Ns(s) đã materialize trong NeighborhoodList.
     """
-    head = head_node.instance
-    bodies: List[Set[Instance]] = []  # list các body hiện tại
-
-    # Candidate instances cho body: BNs(head)
-    candidates = sorted(nbs.bns(head))
-
-    for s in candidates:
-        # relation = SNs(s) ∩ BNs(head)
-        relation = nbs.sns(s) & set(candidates)
-
-        if not bodies or not relation:
-            # Strategy 1: không có body hoặc relation rỗng
-            bodies.append({s})
-            node = NTreeNode(instance=s, parent=head_node)
-            head_node.children.append(node)
-            continue
-
-        new_bodies: List[Set[Instance]] = []
-
-        # Strategy 2–4 trên từng body
-        for body in bodies:
-            if not body:
-                continue
-
-            if body.issubset(relation):
-                # Strategy 2a: relation ⊇ body -> body ∪ {s}
-                body.add(s)
-                continue
-
-            if relation.issubset(body):
-                # Strategy 2b/3: relation ⊂ body
-                nb = set(relation)
-                nb.add(s)
-                if nb not in bodies and nb not in new_bodies:
-                    new_bodies.append(nb)
-                continue
-
-            inter = body & relation
-            if inter:
-                # Strategy 4: intersection không rỗng
-                nb = set(inter)
-                nb.add(s)
-                if nb not in bodies and nb not in new_bodies:
-                    new_bodies.append(nb)
-
-        for nb in new_bodies:
-            bodies.append(nb)
-            node = NTreeNode(instance=s, parent=head_node)
-            head_node.children.append(node)
+    return nbs.ns(s) & cand
 
 
-def mine_cliques_nds(dataset: SpatialDataset, nbs: NeighborhoodList):
+def mine_cliques_nds(
+    dataset: SpatialDataset,
+    nbs: NeighborhoodList
+) -> List[Tuple[Instance, ...]]:
     """
-    Algorithm 3 – NDS.
-    Trả về list N-cliques (maximal, không duplication/subset).
+    NDS – khai phá N-cliques (maximal cliques) dựa trên head H_s.
+
+    Ý tưởng:
+        - Với mỗi instance h trong dataset (đã sort):
+            + Body candidates = BNs(h): các "big neighbors" của h.
+            + Chạy Bron–Kerbosch để tìm mọi maximal clique chứa h
+              trong đồ thị con cảm ứng bởi {h} ∪ BNs(h).
+        - Nhờ dùng BNs(h) (neighbors > h) nên:
+            + Mỗi clique sẽ chỉ được sinh đúng 1 lần, với head
+              là instance nhỏ nhất trong clique.
+
+    Trả về:
+        - Danh sách các clique, mỗi clique là tuple Instance (đã sort).
+        - Chỉ giữ clique có size >= 2.
     """
-    ntree = NTree()
 
-    for s in dataset.instances:
-        # queue = SNs(s) – mỗi small neighbor của s là tiềm năng head
-        for head_candidate in sorted(nbs.sns(s)):
-            head_node = ntree.add_head(head_candidate)
-            _build_for_head(head_node, nbs)
+    all_cliques: List[Tuple[Instance, ...]] = []
 
-    # Lấy cliques từ leaf nodes
-    # cliquecoloc/nds.py
-    cliques: List[Tuple[Instance, ...]] = []
-    for leaf in ntree.leaves():
-        c = leaf.path_instances()
-        if len(c) >= 2:          # CHỈ clique size >= 2
-            cliques.append(c)
+    # Duyệt head theo thứ tự tăng (phù hợp với thứ tự bạn dùng trong Algorithm 1)
+    for head in sorted(dataset.instances):
 
-    # loại duplication & subset (Lemma 6,7)
+        # Body candidates: các "big neighbors" của head
+        body_candidates: Set[Instance] = set(nbs.bns(head))
+
+        # Bron–Kerbosch với:
+        #   clique (R)    = {head}
+        #   candidates(P) = body_candidates
+        #   excluded  (X) = ∅
+        def expand(
+            clique: Tuple[Instance, ...],
+            candidates: Set[Instance],
+            excluded: Set[Instance]
+        ) -> None:
+            """
+            Invariant:
+                - clique: hiện là 1 clique (luôn chứa head).
+                - candidates: các node có thể thêm vào clique
+                              (tất cả đều kề với mọi node trong clique).
+                - excluded: các node đã được xem xét với gốc clique này.
+            """
+            # Nếu không còn candidates và excluded:
+            #    -> clique là maximal (không thể mở rộng thêm)
+            if not candidates and not excluded:
+                if len(clique) >= 2:  # chỉ giữ các clique có size >= 2
+                    all_cliques.append(tuple(sorted(clique)))
+                return
+
+            # Duyệt từng candidate v trong bản copy để không phá vòng lặp
+            for v in list(candidates):
+                # new_clique = clique ∪ {v}
+                new_clique = clique + (v,)
+
+                # Các candidate mới: neighbors của v trong candidates
+                new_candidates = _neighbors_in_set(v, candidates, nbs)
+
+                # Các excluded mới: neighbors của v trong excluded
+                new_excluded = _neighbors_in_set(v, excluded, nbs)
+
+                # Đệ quy mở rộng
+                expand(new_clique, new_candidates, new_excluded)
+
+                # Di chuyển v từ candidates sang excluded (như Bron–Kerbosch gốc)
+                candidates.remove(v)
+                excluded.add(v)
+
+        # Gọi expand khởi đầu với clique = {head}
+        expand((head,), body_candidates, set())
+
+    # Loại trùng cho chắc (trong trường hợp __lt__ / sort có behavior lạ)
     unique: List[Tuple[Instance, ...]] = []
-    for c in sorted(cliques, key=len, reverse=True):
-        fs = set(c)
-        if any(fs.issubset(set(o)) for o in unique):
-            continue
-        unique.append(c)
+    seen: Set[Tuple[Instance, ...]] = set()
+
+    for c in all_cliques:
+        key = tuple(sorted(c))
+        if key not in seen:
+            seen.add(key)
+            unique.append(key)
 
     return unique
-
