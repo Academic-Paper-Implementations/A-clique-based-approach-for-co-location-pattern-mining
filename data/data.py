@@ -47,3 +47,29 @@ class SpatialDataset:
         for inst in self.instances:
             cnt[inst.feature] += 1
         return dict(cnt)
+
+    @classmethod
+    def from_csv(cls, csv_path: str) -> "SpatialDataset":
+        """
+        Load dataset from CSV file.
+        Expected format: InstanceID,Feature,X,Y
+        """
+        import csv
+        instances = []
+        
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            feature_indices = defaultdict(int)
+            
+            for row in reader:
+                feature = row['Feature']
+                x = float(row['X'])
+                y = float(row['Y'])
+                
+                # Auto-increment index for each feature
+                feature_indices[feature] += 1
+                index = feature_indices[feature]
+                
+                instances.append(Instance(feature, index, x, y))
+        
+        return cls(instances)
