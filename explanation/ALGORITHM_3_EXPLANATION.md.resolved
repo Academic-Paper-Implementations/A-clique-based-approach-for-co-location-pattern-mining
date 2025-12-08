@@ -1,0 +1,142 @@
+# Giải Thích Algorithm 3 Chi Tiết: Bron-Kerbosch Recursion Trace
+
+Tài liệu này nâng cấp mức độ chi tiết bằng cách mô phỏng **Stack Trace** (quy trình ngăn xếp đệ quy) của thuật toán Bron-Kerbosch trong [nds.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/nds.py). Chúng ta sẽ soi từng biến số thay đổi như thế nào qua từng dòng code.
+
+**Cấu hình & Dữ liệu:**
+*   `min_dist` = 5.0.
+*   **Focus case**: `head = A.2 (3, 4)`.
+*   **Hàng xóm của A.2**:
+    *   Do `A.2` nhỏ nhất (về thứ tự từ điển) trong nhóm này, tất cả hàng xóm đều là **BNs (Big Neighbors)**.
+    *   `BNs(A.2)` = `{A.4, B.1, C.1, D.1}`. (Giả định tất cả đều cách nhau <= 5).
+
+---
+
+## 1. Khởi Tạo (Line 44-91)
+
+Mã bắt đầu với `head = A.2`.
+
+```python
+47:         body_candidates = set(nbs.bns(head))
+            # body_candidates = {A.4, B.1, C.1, D.1}
+91:         expand((head,), body_candidates, set())
+```
+
+Chúng ta bắt đầu vào hàm đệ quy [expand](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/nds.py#53-89).
+
+---
+
+## 2. Mô Phỏng Đệ Quy (Recursive Stack Trace)
+
+### **Stack Depth 0**: [expand](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/nds.py#53-89) cho A.2
+*   **Input**:
+    *   [clique](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#93-104): [(A.2,)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29)
+    *   `candidates`: `{A.4, B.1, C.1, D.1}`
+    *   `excluded`: `{}`
+
+Thuật toán duyệt qua từng candidates. Giả sử thứ tự duyệt là: `B.1`, rồi `C.1`... (Lưu ý: `A.4` cùng Feature A nên sẽ bị loại do ràng buộc Feature trong thực tế, nhưng ở đây giả sử ta giữ lại để trace logic thuật toán). Hãy chọn `B.1` trước.
+
+#### **Loop 1: Chọn `v = B.1`** (Line 73)
+```python
+75:             new_clique = clique + (v,)  # -> (A.2, B.1)
+```
+
+**Tính Candidates mới (Line 78)**:
+```python
+78:             new_candidates = _neighbors_in_set(v, candidates, nbs)
+```
+*   Hàng xóm của `B.1` nằm trong `{A.4, B.1, C.1, D.1}` là ai?
+    *   `C.1` (gần B.1). `D.1` (gần B.1).
+    *   -> `new_candidates` = `{C.1, D.1}`.
+
+**Tính Excluded mới (Line 81)**:
+*   `new_excluded` = `{}` (Rỗng giao với bất kỳ ai cũng là rỗng).
+
+Gọi đệ quy (Line 84)... -> **Đi xuống Depth 1**.
+
+---
+
+### **Stack Depth 1**: Mở rộng từ [(A.2, B.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29)
+*   **Input**:
+    *   [clique](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#93-104): [(A.2, B.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29)
+    *   `candidates`: `{C.1, D.1}`
+    *   `excluded`: `{}`
+
+#### **Loop 1.1: Chọn `v = C.1`**
+```python
+75:             new_clique = (A.2, B.1, C.1)
+```
+*   **Tính new_candidates**: Hàng xóm của `C.1` trong `{C.1, D.1}`.
+    *   Chỉ còn `D.1` (Nếu D.1 gần C.1).
+    *   -> `new_candidates` = `{D.1}`.
+
+Gọi đệ quy... -> **Đi xuống Depth 2**.
+
+---
+
+### **Stack Depth 2**: Mở rộng từ [(A.2, B.1, C.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29)
+*   **Input**:
+    *   [clique](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#93-104): [(A.2, B.1, C.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29)
+    *   `candidates`: `{D.1}`
+
+#### **Loop 1.1.1: Chọn `v = D.1`**
+```python
+75:             new_clique = (A.2, B.1, C.1, D.1)
+```
+*   **Tính new_candidates**: Hàng xóm của `D.1` trong `{D.1}` -> Rỗng `{}`.
+
+Gọi đệ quy... -> **Đi xuống Depth 3**.
+
+---
+
+### **Stack Depth 3**: Đỉnh (Maximal)
+*   **Input**:
+    *   [clique](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#93-104): [(A.2, B.1, C.1, D.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29)
+    *   `candidates`: `{}`
+    *   `excluded`: `{}`
+*   **Trạng thái (Line 67)**: `if not candidates and not excluded`: **TRUE**.
+*   **Action**: Lưu [(A.2, B.1, C.1, D.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29) vào kết quả.
+*   **Return**. (Quay lui về Depth 2).
+
+---
+
+### **Quay lui (Backtracking) về Depth 2**
+*   Vừa xử lý xong `D.1`.
+*   **Line 87-88 (Quan trọng)**:
+    ```python
+    87:             candidates.remove(v)  # Xóa D.1 khỏi candidates
+    88:             excluded.add(v)       # Thêm D.1 vào excluded
+    ```
+*   Giờ `candidates` rỗng, `excluded` có `{D.1}`.
+*   Kết thúc vòng lặp. Hàm [expand](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/nds.py#53-89) kết thúc.
+*   **Return**. (Quay lui về Depth 1).
+
+---
+
+### **Quay lui về Depth 1** (Đang xét [(A.2, B.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29))
+*   Vừa xử lý xong `v = C.1`.
+*   **Line 87-88**:
+    *   `candidates` ban đầu `{C.1, D.1}` -> Xóa `C.1`. Còn `{D.1}`.
+    *   `excluded` thêm `C.1`.
+*   **Loop 1.2: Tiếp tục chọn `v = D.1`** (Phần tử tiếp theo trong candidates).
+    *   Thử tạo clique [(A.2, B.1, D.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29).
+    *   `new_candidates`: Hàng xóm `D.1` trong tập `{D.1}` -> Rỗng.
+    *   **Tính `new_excluded` (Line 81)**:
+        *   Hàng xóm của `D.1` trong tập excluded `{C.1}` là ai?
+        *   Là `C.1` (vì D.1 và C.1 là hàng xóm).
+        *   -> `new_excluded` = `{C.1}`.
+    *   **Gọi đệ quy (Depth 2 phẩy)**: [expand((A.2,B.1,D.1), {}, {C.1})](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/nds.py#53-89).
+        *   Tại Depth 2': `candidates` rỗng, nhưng `excluded` không rỗng (`{C.1}`).
+        *   -> **Line 67 check FALSE**. Không lưu clique này. (Vì nó không phải maximal, nó là tập con của [(A.2, B.1, C.1, D.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29) đã tìm thấy trước đó).
+    *   -> **PRUNING SUCCESSFUL** (Cắt tỉa thành công).
+
+---
+
+## 3. Tổng Kết Logic
+
+Qua tracing trên, ta thấy rõ 3 cơ chế cực hay của thuật toán NDS/Bron-Kerbosch trong code:
+
+1.  **Đệ quy sâu dần (Deepening)**: Giúp tìm được clique lớn nhất [(A,B,C,D)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29) ngay lập tức.
+2.  **Move to Excluded (Line 88)**: Sau khi đã xét `C.1` xong, ta ném nó vào sọt rác `excluded`.
+3.  **Excluded Verification (Line 81 & 67)**: Khi ta thử tạo clique mới chỉ với `D.1` (bỏ qua `C.1`), ta kiểm tra xem `D.1` có kết nối với thằng `C.1` trong sọt rác không. Nếu có, nghĩa là ta vừa bỏ lỡ một clique lớn hơn (`...C.1, D.1`), nên clique hiện tại (`...D.1`) không phải là Maximal -> **Vứt bỏ**.
+
+Đây chính là cách thuật toán đảm bảo chỉ trả về **maximal cliques** mà không cần bước lọc trùng lặp tốn kém sau đó.

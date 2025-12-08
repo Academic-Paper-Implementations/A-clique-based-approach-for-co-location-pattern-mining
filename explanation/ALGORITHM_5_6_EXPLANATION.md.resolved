@@ -1,0 +1,106 @@
+# Giải Thích Chuyên Sâu Algorithm 5 & 6: Math & Code Mapping
+
+Tài liệu này giải thích thuật toán ở mức độ chi tiết nhất, thiết lập mối liên hệ 1-1 giữa **Code Python**, **Công Thức Toán Học (Paper)** và **Dữ Liệu Thực Tế**.
+
+**Dữ liệu Trace ([testDataset.csv](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/data/testDataset.csv))**:
+*   Tổng số Instance: `Count(A)=5`, `Count(B)=4`, `Count(C)=4`, `Count(D)=3`.
+*   Candidate Patterns từ C-Hash: `c1 = {A, B}`, `c2 = {C, D}`.
+*   `min_prev` = 0.6.
+
+---
+
+## 1. Algorithm 6: Tính PI (Calculate PI)
+
+### Liên Kết Lý Thuyết (Paper Definitions)
+*   **Definition 4 (Participation Ratio - PR)**: Tỷ lệ tham gia cúa feature $f$ trong pattern $c$.
+    $$PR(c, f) = \frac{|\{instance \in f \mid instance \in c\}|}{\text{Total}(f)}$$
+*   **Definition 4 (Participation Index - PI)**: Giá trị nhỏ nhất của PR trong pattern.
+    $$PI(c) = \min_{f \in c} \{ PR(c, f) \}$$
+*   **Lemma 10**: Công thức tính nhanh PR bằng cách hợp (union) các instance từ C-Hash.
+
+### Code Trace (Hàm [calculate_pi](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py#12-32))
+
+Xét pattern **`cp = {"C", "D"}`**.
+
+**BƯỚC 1: Tìm Supersets (Lemma 10 Support)**
+```python
+16:     supersets = [key for key in chash.table.keys() if cp.issubset(key)]
+```
+*   **Logic Paper**: Để tính $PR(c, f)$, ta phải tìm tất cả các clique $c'$ sao cho $c \subseteq c'$.
+*   **Trace**: Vì C-Hash đã gom hết vào entry `{"C", "D"}`, nên `supersets` chính là `[{"C", "D"}]`.
+
+**BƯỚC 2: Hợp Instance (Union Operation)**
+```python
+20:     ins_union: Dict[str, set] = {f: set() for f in cp}
+21:     for key in supersets:
+23:         for f in cp:
+24:             ins_union[f].update(bucket[f])
+```
+*   **Toán học**: Tính tử số của PR. $\bigcup c'_j[f]$.
+*   **Trace**:
+    *   `ins_union["C"]` = `{C.1}` (Lấy từ bucket).
+    *   `ins_union["D"]` = `{D.1}`.
+
+**BƯỚC 3: Tính PR (Code lines 26-29)**
+```python
+27:     for f in cp:
+28:         denom = feature_counts.get(f, 0)
+29:         prs[f] = ... len(ins_union[f]) / float(denom)
+```
+*   **Feature C**:
+    *   Tử số (Numerator): [len({C.1})](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py#37-85) = 1.
+    *   Mẫu số (Denominator - Total Count): `4` (C.1..C.4).
+    *   **Math**: $PR(\{C,D\}, C) = 1/4 = 0.25$.
+*   **Feature D**:
+    *   Tử số: `1`. Mẫu số: `3`.
+    *   **Math**: $PR(\{C,D\}, D) = 1/3 \approx 0.33$.
+
+**BƯỚC 4: Kết luận PI (Line 31)**
+```python
+31:     return min(prs.values())
+```
+*   **Math**: $PI(\{C,D\}) = \min(0.25, 0.33) = 0.25$.
+
+---
+
+## 2. Algorithm 5: Lọc Pattern (Filtering Strategy)
+
+Thuật toán này trong code ([mine_prevalent_patterns](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py#37-85)) sử dụng chiến lược **Top-Down** (từ dài xuống ngắn) để tận dụng tính chất đơn điệu (Monotonicity).
+
+### Thiết lập trạng thái (State)
+```python
+48:     candidates = ... sorted(..., reverse=True) # Sắp xếp theo độ dài giảm dần
+53:     while candidates:
+54:         curr = candidates.pop(0)
+```
+
+### Trace Vòng Lặp (State Machine Loop)
+
+#### Iteration 1: Xét `curr = {"C", "D"}`
+*   **Input**: [candidates](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/chash.py#54-60) queue ban đầu có `[{"C", "D"}, {"A", "B"}]` (Giả sử bằng size nên thứ tự ngẫu nhiên). Lấy `{"C", "D"}`.
+*   **Action**: Gọi [calculate_pi](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py#12-32) -> Trả về `0.25`.
+*   **Check (Line 60)**: `if 0.25 >= 0.6`:
+    *   **Kết quả**: **FALSE**. Nhảy sang `else` (Line 74).
+*   **Pruning Strategy (Logic Code)**:
+    *   Vì `{"C", "D"}` thất bại, ta không thể khẳng định điều gì về tập con của nó (như `{"C"}` hay `{"D"}`).
+    *   Tuy nhiên, code dòng 76-80 ([direct_subsets](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/utils.py#17-24)) có cơ chế: Nếu `curr` không đạt, hãy thêm các tập con trực tiếp của nó vào hàng đợi để xem xét sau (nếu chưa xét).
+    *   *Trong dataset này, tập con là size 1 nên bị bỏ qua.*
+*   **Output**: Discard `{"C", "D"}`.
+
+#### Iteration 2: Xét `curr = {"A", "B"}`
+*   **Input**: [candidates](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/chash.py#54-60) còn `[{"A", "B"}]`. Popped.
+*   **Action**: Gọi [calculate_pi](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py#12-32) -> Trả về `0.6` (Tính bên trên).
+*   **Check (Line 60)**: `0.6 >= 0.6`:
+    *   **Kết quả**: **TRUE**. Pattern này phổ biến!
+*   **Optimization (Line 61-73)**:
+    *   Đây là điểm code tối ưu hơn Paper thuần túy.
+    *   Thay vì chỉ lưu `curr`, code chủ động tính luôn cho các tập con (`sub_pi`) và lưu lại.
+    *   **Line 72**: `candidate_set.discard(sub)`.
+    *   **Ý nghĩa**: "Tôi đã biết bố mẹ (`A,B`) đỗ rồi, thì con cái (`A`, `B`) chắc chắn cũng đỗ (theo Monotonicity), và tôi đã tính luôn điểm cho chúng rồi. Đừng xét lại chúng trong vòng lặp nữa."
+
+### Tổng Kết Mapping
+*   **Code Line 16-24** = **Lemma 10** (Cách tính PR nhanh từ C-Hash).
+*   **Code Line 31** = **Definition 4** (PI = min PR).
+*   **Code Line 60-70** = Chiến lược Pruning dựa trên **Anti-monotone property** (Nếu pattern phổ biến, mọi con của nó phải xét/giữ).
+
+Giao diện giữa toán học trừu tượng và code Python được thể hiện chính xác qua các biến số `ins_union` (tử số PR) và [feature_counts](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/data.py#41-43) (mẫu số PR).
