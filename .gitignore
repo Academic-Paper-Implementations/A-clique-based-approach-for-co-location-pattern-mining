@@ -77,7 +77,6 @@ venv.bak/
 .DS_Store
 
 # Project specific
-data/*.csv
 data/*.txt
 data/*.json
 !data/data.py
