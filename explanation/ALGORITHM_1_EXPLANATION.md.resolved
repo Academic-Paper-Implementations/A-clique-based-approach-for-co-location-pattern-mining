@@ -1,0 +1,106 @@
+# Giải Thích Algorithm 1: Code, Data Trace & Paper Concepts
+
+Tài liệu này trình bày thuật toán song song giữa **Code thực tế** (file [neighborhood.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py)), **Dữ liệu chạy thử** ([testDataset.csv](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/data/testDataset.csv)), và các **Khái Niệm Học Thuật** từ bài báo gốc.
+
+**Cấu hình chạy thử:**
+*   `min_dist` = **5.0**
+*   `min_prev` = 0.6 (Chưa dùng tới ở bước này).
+*   **Dataset Sample**: `B.1(6,3)`, `C.1(5,4)`, `A.2(3,4)`, `A.4(6,1)`.
+
+---
+
+## 1. Khái Niệm Cốt Lõi (Paper Concepts)
+
+Trong bài báo *"A clique-based approach for co-location pattern mining"*, Algorithm 1 đóng vai trò **Neighborhood Materialization**. Nó hiện thực hóa các định nghĩa sau:
+
+### a. Neighborhood Definitions (Thường là Definition 6)
+Bài báo chia quan hệ hàng xóm thành 3 loại để phục vụ việc sinh clique không trùng lặp:
+*   **Ns(s)**: Tập hợp hàng xóm thông thường (khoảng cách <= R).
+*   **SNs(s) (Small Neighbors)**: Tập con của Ns(s) chứa các phần tử có thứ tự từ điển **nhỏ hơn** `s`.
+*   **BNs(s) (Big Neighbors)**: Tập con của Ns(s) chứa các phần tử có thứ tự từ điển **lớn hơn** `s`.
+    *   *Code Mapping*: Class [NeighborhoodEntry](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#9-15) (Line 10-14).
+
+### b. Grid-based Optimization (Algorithm 1)
+Để tránh so sánh tất cả cặp điểm (O(N^2)), bài báo đề xuất chia không gian thành lưới (Grid) kích thước R x R. Chỉ các điểm trong cùng ô hoặc 8 ô lân cận mới được xét làm hàng xóm.
+    *   *Code Mapping*: Hàm [_divide_space](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#41-57) (Line 41).
+
+---
+
+## 2. Phân Chia Lưới (Divide Space)
+
+Hàm [_divide_space](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#41-57) (Lines 41-56).
+
+### Code
+```python
+53:         gx = int(math.floor((s.x - min_x) / min_dist))
+54:         gy = int(math.floor((s.y - min_y) / min_dist))
+```
+*   **Lý thuyết**: Ánh xạ tọa độ thực sang tọa độ lưới để giảm không gian tìm kiếm.
+
+### Data Trace (`min_dist=5`)
+
+| Instance | Tọa độ thực | Grid Logic | Kết quả Grid |
+| :--- | :--- | :--- | :--- |
+| **C.1** | (5, 4) | `floor(4/5)=0`, `floor(3/5)=0` | **(0, 0)** |
+| **A.2** | (3, 4) | `floor(2/5)=0`, `floor(3/5)=0` | **(0, 0)** |
+| **B.1** | (6, 3) | `floor(5/5)=1`, `floor(2/5)=0` | **(1, 0)** |
+
+*   **Nhận xét**: C.1 và A.2 chung ô. B.1 ở ô bên cạnh. Theo lý thuyết Grid, thuật toán sẽ chỉ quét ô (0,0) và các ô kề (như 1,0) để tìm hàng xóm cho C.1.
+
+---
+
+## 3. Tìm Kiếm & Phân Loại Hàng Xóm (Line 74-112)
+
+Hàm [materialize_neighborhoods](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#74-113).
+
+### Code Logic kiểm tra (Line 99-110)
+Đây là đoạn code quan trọng nhất để thỏa mãn định nghĩa SNs/BNs.
+
+```python
+99:                 if s < s_prime:
+100:                     # s < s'  ⇒ s' ∈ BNs(s), s ∈ SNs(s')
+101:                     entry_s.bns.add(s_prime)
+103:                     entry_sp.sns.add(s)
+105:                 else:
+106:                     # s > s' ⇒ s ∈ BNs(s'), s' ∈ SNs(s)
+107:                     entry_sp.bns.add(s)
+109:                     entry_s.sns.add(s_prime)
+```
+
+### Data Trace: Xét `s = C.1`
+**Môi trường**: `min_dist=5` -> `min_dist^2 = 25`.
+
+#### 1. C.1 (5,4) vs A.4 (6,1)
+*   **Khoảng cách**: `dist^2 = 1^2 + (-3)^2 = 10`.
+*   **Lý thuyết**: `10 <= 25`. Thỏa mãn điều kiện hàng xóm.
+*   **Phân loại (Def 6)**:
+    *   `C` > `A` (theo bảng chữ cái).
+    *   -> `C.1` là "kẻ lớn", `A.4` là "kẻ nhỏ".
+    *   -> Add `A.4` vào `SNs(C.1)`. Add `C.1` vào `BNs(A.4)`.
+    *   *Code Line 109 hiện thực điều này*.
+
+#### 2. C.1 (5,4) vs B.1 (6,3)
+*   **Khoảng cách**: `dist^2 = 2`.
+*   **Phân loại**:
+    *   `C` > `B`.
+    *   -> Add `B.1` vào `SNs(C.1)`.
+
+#### 3. C.1 (5,4) vs D.1 (6,5) (Giả sử có D.1)
+*   **Phân loại**:
+    *   `C` < `D`.
+    *   -> Add `D.1` vào `BNs(C.1)`.
+    *   *Code Line 101 hiện thực điều này*.
+
+---
+
+## 4. Tổng Kết Output & Ý Nghĩa Học Thuật
+
+Sau khi chạy xong, danh sách hàng xóm của `C.1` được phân loại rõ ràng:
+
+| Tập hợp | Giá trị (Trace) | Ý nghĩa trong Paper (IDS/NDS) |
+| :--- | :--- | :--- |
+| **Ns(C.1)** | `{A.2, A.4, B.1, D.1}` | Tập hàng xóm đầy đủ. |
+| **SNs(C.1)** | `{A.2, A.4, B.1}` | Dùng trong NDS (Algorithm 3) để mở rộng cây N-Tree. |
+| **BNs(C.1)** | `{D.1}` | Dùng trong IDS (Algorithm 2) để mở rộng cây I-Tree (Lemma 3). |
+
+Việc tách biệt **SNs** và **BNs** ngay từ bước này chính là tiền đề tuyệt đối để các thuật toán sau (IDS/NDS) hoạt động chính xác và không sinh trùng lặp.
