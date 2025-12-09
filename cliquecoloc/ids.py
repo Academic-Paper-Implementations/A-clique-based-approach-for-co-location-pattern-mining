@@ -5,6 +5,8 @@ from collections import deque
 
 from .data import Instance, SpatialDataset
 from .neighborhood import NeighborhoodList
+from concurrent.futures import ProcessPoolExecutor
+from itertools import islice
 
 
 @dataclass
@@ -103,62 +105,86 @@ def _collect_clique(node: ITreeNode) -> Tuple[Instance, ...]:
     return tuple(sorted(clique))
 
 
-def mine_cliques_ids(dataset: SpatialDataset,
-                     nbs: NeighborhoodList) -> List[Tuple[Instance, ...]]:
+def _process_heads_ids(
+    heads: List[Instance], nbs: NeighborhoodList
+) -> List[Tuple[Instance, ...]]:
     """
-    Algorithm 2 – IDS: Khai phá tất cả I-cliques (theo định nghĩa I-clique trong paper).
-
-    Input:
-        - dataset: SpatialDataset (chứa các instance)
-        - nbs: NeighborhoodList (đã materialize Ns, SNs, BNs từ Algorithm 1)
-
-    Output:
-        - Danh sách các I-cliques (mỗi clique là tuple các Instance, đã sort).
-          Chỉ giữ clique có kích thước >= 2.
+    Worker function: Mine cliques starting from a list of head-nodes.
     """
+    local_cliques: List[Tuple[Instance, ...]] = []
     itree = ITree()
-    cliques: List[Tuple[Instance, ...]] = []
 
-    # Duyệt từng instance làm head-node
-    for s in dataset.instances:
+    for s in heads:
         queue = deque()
 
-        # tạo head-node cho instance s
+        # create head-node for instance s
         head = itree.add_head_node(s)
         queue.append(head)
 
-        # BFS trên I-tree
+        # BFS on I-tree
         while queue:
             curr = queue.popleft()
 
-            # bước mở rộng: tính children theo Lemma 3
+            # expansion step: calculate children via Lemma 3
             children_instances = _get_children(curr, nbs)
 
-            # nếu không có child → curr là node lá → sinh 1 clique
+            # if no children -> curr is leaf node -> potential clique
             if not children_instances:
                 clique = _collect_clique(curr)
-                # chỉ giữ clique có size >= 2
+                # only keep cliques with size >= 2
                 if len(clique) >= 2:
-                    cliques.append(clique)
+                    local_cliques.append(clique)
                 continue
 
-            # tạo các node con cho curr
+            # create child nodes for curr
             children_nodes: List[ITreeNode] = []
             prev: Optional[ITreeNode] = None
             for inst in children_instances:
                 node = ITreeNode(instance=inst, parent=curr)
                 curr.children.append(node)
-                # node_link giữa các con cùng level
+                # node_link between siblings
                 if prev is not None:
                     prev.node_link = node
                 prev = node
                 children_nodes.append(node)
 
-            # push children vào queue để BFS tiếp
+            # push children to queue for BFS
             for ch in children_nodes:
                 queue.append(ch)
 
-        # sau khi xong head-node s, reset cây con ở root
+        # reset root's children for next head
         itree.root.children = []
+
+    return local_cliques
+
+
+def mine_cliques_ids(
+    dataset: SpatialDataset, nbs: NeighborhoodList, n_workers: int = 1
+) -> List[Tuple[Instance, ...]]:
+    """
+    Algorithm 2 – IDS: Mine all I-cliques.
+    Supports parallel execution if n_workers > 1.
+    """
+    instances = list(dataset.instances)
+    
+    # Serial path
+    if n_workers <= 1:
+        return _process_heads_ids(instances, nbs)
+
+    # Parallel path
+    chunk_size = max(1, len(instances) // n_workers)
+    chunks = [
+        instances[i : i + chunk_size]
+        for i in range(0, len(instances), chunk_size)
+    ]
+    
+    cliques: List[Tuple[Instance, ...]] = []
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        futures = [
+            executor.submit(_process_heads_ids, chunk, nbs) 
+            for chunk in chunks
+        ]
+        for fut in futures:
+            cliques.extend(fut.result())
 
     return cliques
