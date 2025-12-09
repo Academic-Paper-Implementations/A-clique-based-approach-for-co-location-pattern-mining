@@ -41,7 +41,7 @@ pip install numpy scipy
 ### Run simple demo
 
 ```bash
-python examples/demo.py
+python run_example.py
 ```
 
 ### Run with Jupyter Notebook
@@ -56,62 +56,53 @@ jupyter notebook examples/demo.ipynb
 ### Basic example
 
 ```python
-import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from cliquecoloc import (
+    run_pipeline,
+    GeneratorParams,
+    generate_synthetic,
+    save_csv,
+)
 
-from colocation.synthetic import GeneratorParams, SyntheticSpatialGenerator
-from colocation.miner import CoLocationMiner
+DATA_DIR = Path("data")
 
 # Generate synthetic data
 params = GeneratorParams(
     P=20,        # Number of prevalent patterns
     I=500,       # Number of instances per feature
-    D=10000.0,   # Space dimension
+    D=5000.0,    # Space dimension
     F=20,        # Number of features
     Q=5,         # Pattern size
     m=50000,     # Total number of instances
-    min_dist=50.0,   # Minimum distance threshold
-    clumpy=1     # Clumpiness level (1, 2, 3,...)
+    min_dist=50.0 # Minimum distance threshold
 )
 
-gen = SyntheticSpatialGenerator(params, seed=42)
-dataset = gen.generate()
+ds_syn = generate_synthetic(params, seed=42)
 
 # Mine co-location patterns
-miner = CoLocationMiner(
-    dataset=dataset,
-    min_dist=params.min_dist,
-    min_prev=0.2  # Minimum prevalence threshold
-)
+# schema can be 'ids' or 'nds'
+cliques, chash, patterns = run_pipeline(ds_syn, min_dist=50, min_prev=0.2, schema="nds")
 
-# Run algorithms
-cliques_ids, prev_ids = miner.run_ids()  # Using IDS
-cliques_nds, prev_nds = miner.run_nds()  # Using NDS
-
-# View results
-print(f"Number of cliques (IDS): {len(cliques_ids)}")
-print(f"Number of prevalent patterns (IDS): {len(prev_ids)}")
-print(f"Number of cliques (NDS): {len(cliques_nds)}")
-print(f"Number of prevalent patterns (NDS): {len(prev_nds)}")
+print(f"Number of cliques: {len(cliques)}")
+print(f"Number of prevalent patterns: {len(patterns)}")
 ```
 
 ## 📁 Project Structure
 
 ```
 .
-├── colocation/          # Main module
+├── cliquecoloc/         # Main module
 │   ├── synthetic.py     # Synthetic data generation
 │   ├── miner.py         # Mining algorithms
-│   ├── itree_ids.py     # IDS structure
-│   ├── ntree_nds.py     # NDS structure
-│   ├── neighbors.py     # Neighbor search
-│   ├── prevalent.py     # Prevalence calculation
+│   ├── ids.py           # IDS algorithm
+│   ├── nds.py           # NDS algorithm
+│   ├── neighborhood.py  # Neighbor search
+│   ├── prevalence.py    # Prevalence calculation
 │   └── chash.py         # Clique hashing
 ├── data/                # Data module
 ├── examples/            # Examples
-│   ├── demo.py          # Python demo
 │   └── demo.ipynb       # Notebook demo
+├── run_example.py       # Python demo
 └── readme.md            # This file
 ```
 
@@ -125,12 +116,12 @@ print(f"Number of prevalent patterns (NDS): {len(prev_nds)}")
 - `Q`: Size of each pattern
 - `m`: Total number of instances
 - `min_dist`: Minimum neighbor distance threshold
-- `clumpy`: Clumpiness level (1=sparse, 2-3=denser)
 
-### CoLocationMiner
+### run_pipeline
 - `dataset`: Input dataset
 - `min_dist`: Neighbor distance threshold
 - `min_prev`: Minimum prevalence threshold (0-1)
+- `schema`: Algorithm variant ('ids' or 'nds')
 
 ## 📊 Output
 
@@ -139,14 +130,9 @@ print(f"Number of prevalent patterns (NDS): {len(prev_nds)}")
 
 ## 🔧 Troubleshooting
 
-### Error "ModuleNotFoundError: No module named 'colocation'"
+### Error "ModuleNotFoundError: No module named 'cliquecoloc'"
 
-Make sure to add the parent directory path:
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-```
+Make sure you are running the script from the root directory of the project, which contains the `cliquecoloc` folder.
 
 ### Missing dependencies
 
