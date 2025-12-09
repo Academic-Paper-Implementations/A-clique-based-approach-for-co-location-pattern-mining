@@ -56,7 +56,7 @@ def load_csv(path: str | Path) -> SpatialDataset:
         for row in reader:
             # Handle both lowercase and capitalized column names
             feature = row.get("feature") or row.get("Feature")
-            idx = row.get("idx") or row.get("InstanceID")
+            idx = row.get("idx") or row.get("InstanceID") or row.get("Instance")
             x = row.get("x") or row.get("X")
             y = row.get("y") or row.get("Y")
             

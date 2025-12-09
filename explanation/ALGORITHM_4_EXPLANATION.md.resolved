@@ -1,0 +1,104 @@
+# Giải Thích Algorithm 4 Chi Tiết: Compressed Clique Hash Evolution
+
+Tài liệu này mở rộng mức độ chi tiết của Algorithm 4, tập trung vào sự biến đổi trạng thái bộ nhớ (Memory State Evolution) qua từng bước và lý do tại sao cấu trúc này tối ưu cho việc tính toán thống kê (Alg 5, 6).
+
+**Dữ liệu mô phỏng**:
+Tiếp nối kết quả từ Alg 3, giả sử ta tìm được các cliques sau:
+1.  **Clique 1**: `{C.1, D.1}`
+2.  **Clique 2**: `{C.1, D.2}` (Giả sử D.2 cũng gần C.1)
+3.  **Clique 3**: `{A.4, B.1}`
+
+---
+
+## 1. Trace Sự Biến Đổi C-Hash (Step-by-Step Evolution)
+
+Khởi tạo: `self.table = {}`
+
+### Bước 1: Thêm Clique `{C.1, D.1}`
+*   **Input**: `clique = [C.1, D.1]`
+*   **Tính Key (Line 35)**:
+    *   Feature set = `{"C", "D"}`.
+    *   Key = `frozenset({"C", "D"})`.
+*   **Tạo Bucket (Line 46-48)**:
+    *   `bucket` chưa có. Tạo `{"C": set(), "D": set()}`.
+*   **Gom Instance (Line 51-52)**:
+    *   `bucket["C"].add(C.1)`
+    *   `bucket["D"].add(D.1)`
+
+**Trạng thái 1**:
+```python
+{
+    frozenset({"C", "D"}): {
+        "C": {C.1},
+        "D": {D.1}
+    }
+}
+```
+
+### Bước 2: Thêm Clique `{C.1, D.2}`
+*   **Input**: `clique = [C.1, D.2]`
+*   **Tính Key**: `{"C", "D"}` -> Trùng Key cũ!
+*   **Lấy Bucket cũ (Line 45)**.
+*   **Gom Instance**:
+    *   `bucket["C"].add(C.1)` -> Đã có `C.1`, tập hợp không đổi (Set tính chất loại trùng).
+    *   `bucket["D"].add(D.2)` -> Thêm mới `D.2`.
+
+**Trạng thái 2 (NÉN)**:
+Đây là điểm mấu chốt. Ta không lưu 2 dòng riêng biệt. Info của C.1 được hợp nhất.
+```python
+{
+    frozenset({"C", "D"}): {
+        "C": {C.1},         # C.1 tham gia vào 2 clique, nhưng chỉ lưu 1 lần
+        "D": {D.1, D.2}     # Danh sách các D tham gia
+    }
+}
+```
+
+### Bước 3: Thêm Clique `{A.4, B.1}`
+*   **Input**: `clique = [A.4, B.1]`
+*   **Tính Key**: `{"A", "B"}`. Key mới.
+*   **Tạo Bucket mới**.
+*   **Gom Instance**: `bucket["A"]={A.4}`, `bucket["B"]={B.1}`.
+
+**Trạng thái 3 (Cuối cùng)**:
+```python
+{
+    frozenset({"C", "D"}): { "C": {C.1}, "D": {D.1, D.2} },
+    frozenset({"A", "B"}): { "A": {A.4}, "B": {B.1} }
+}
+```
+
+---
+
+## 2. So Sánh Hiệu Quả (Naive vs C-Hash)
+
+Tại sao phải phức tạp hóa vấn đề như vậy?
+
+### Cách lưu ngây thơ (List of Cliques)
+Lưu list các tuple: `[ {C.1, D.1}, {C.1, D.2}, {C.1, D.3}... ]`
+Giả sử có 1000 ông `D` kết nối với `C.1`.
+*   Bộ nhớ: Lưu `C.1` lặp lại **1000 lần**.
+*   Tính PI(C): Phải duyệt 1000 clique, đếm xem tập hợp C là bao nhiêu -> Rất chậm (O(N)).
+
+### Cách lưu C-Hash (Algorithm 4)
+*   Bộ nhớ: Lưu `C.1` **đúng 1 lần** trong set `bucket["C"]`.
+*   Tính PI(C): Chỉ cần gọi [len(bucket["C"])](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py#37-85) -> Ra ngay kết quả là 1. **Cực nhanh (O(1))**.
+
+---
+
+## 3. Liên Kết Logic Paper (Alg 6 & Prevalence)
+
+Cấu trúc này phục vụ trực tiếp cho **Algorithm 6 (Calculate PI)** ở file [prevalence.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py):
+
+```python
+# Trích prevalence.py
+def calculate_pi(cp, chash, ...):
+    key = cp
+    bucket = chash.table[key]
+    count_C = len(bucket["C"])  # Lấy độ lớn tập C đã gom gọn
+    PR_C = count_C / total_C_in_dataset
+```
+
+Việc [Hash](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/chash.py#10-71) theo `frozenset` (Line 35) cho phép truy cập bucket ngay lập tức mà không cần quan tâm thứ tự (ví dụ [(C,D)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29) hay [(D,C)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#27-29) đều ra cùng key).
+
+**Tổng Kết**:  Algorithm 4 không chỉ là kho lưu trữ, nó là một bước **Data Transformation** (Biến đổi dữ liệu) thông minh: Chuyển từ không gian Instance (Dữ liệu thô) sang không gian Feature (Dữ liệu tóm tắt) để tính toán thống kê.

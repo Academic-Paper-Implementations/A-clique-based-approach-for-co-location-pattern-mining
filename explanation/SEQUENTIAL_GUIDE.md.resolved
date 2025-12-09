@@ -1,0 +1,93 @@
+# Hướng Dẫn Tuần Tự: Quy Trình Khai Phá Co-location (Full Pipeline)
+
+Tài liệu này đóng vai trò là "Bản Đồ" (Map), xâu chuỗi 5 file giải thích chi tiết trước đó thành một câu chuyện liền mạch, giúp bạn hiểu luồng đi của dữ liệu từ đầu đến cuối.
+
+Chúng ta sẽ theo chân bộ dữ liệu [testDataset.csv](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/data/testDataset.csv) (`min_dist=5`, `min_prev=0.6`) đi qua từng trạm xử lý.
+
+---
+
+## 🏗️ Trạm 1: Xây Dựng & Tìm Kiếm Hàng Xóm (Algorithm 1)
+> **Mục tiêu**: Biến các điểm rời rạc trên bản đồ thành cấu trúc mạng lưới (Neighborhood Graph).
+
+*   **File Code**: [cliquecoloc/neighborhood.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py)
+*   **Chi tiết tại**: [ALGORITHM_1_EXPLANATION.md](ALGORITHM_1_EXPLANATION.md)
+
+**Luồng Dữ Liệu**:
+1.  **Input**: Tọa độ thô (`C.1` tại 5,4; `A.4` tại 6,1...).
+2.  **Chia Grid**: Ánh xạ vào các ô lưới (Grid partitioning).
+3.  **Phân loại**:
+    *   Tìm ra `A.4` và `B.1` là hàng xóm của `C.1`.
+    *   Quan trọng nhất: Chia thành **SNs** (Small Neighbors - Em nhỏ) và **BNs** (Big Neighbors - Anh lớn).
+    *   *Ví dụ*: `C.1` xem `D.1` là **BNs** (Anh lớn), nhưng xem `A.4` là **SNs** (Em nhỏ).
+
+**Output Trạm 1**: Object [NeighborhoodList](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/neighborhood.py#17-39) (Đã phân loại ai lớn, ai bé).
+
+---
+
+## 🌲 Trạm 2: Sinh Các Nhóm (Cliques) (Algorithm 2 & 3)
+> **Mục tiêu**: Từ các mối quan hệ hàng xóm, tìm ra các nhóm "chơi thân" với nhau (Maximal Cliques).
+
+Tại đây có 2 lựa chọn (chiến lược), bạn có thể chọn 1 trong 2:
+
+### Cách A: Cây I-Tree (Algorithm 2 - IDS)
+*   **File Code**: [cliquecoloc/ids.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py)
+*   **Chi tiết tại**: [ALGORITHM_2_EXPLANATION.md](ALGORITHM_2_EXPLANATION.md)
+*   **Cơ chế**: Dựng cây. Bắt đầu từ `C.1`, hỏi "Anh lớn của C.1 là ai?". Trả lời: `D.1`. -> Ghép thành nhánh `C.1 -> D.1`.
+
+### Cách B: Cây N-Tree / Bron-Kerbosch (Algorithm 3 - NDS)
+*   **File Code**: [cliquecoloc/nds.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/nds.py)
+*   **Chi tiết tại**: [ALGORITHM_3_EXPLANATION.md](ALGORITHM_3_EXPLANATION.md)
+*   **Cơ chế**: Đệ quy. Bắt đầu từ `C.1`, gọi tất cả anh lớn vào họp (`D.1`). Thử kết hợp mọi khả năng để tìm nhóm lớn nhất.
+
+**Output Trạm 2**: Danh sách các Cliques thô: `[{C.1, D.1}, {A.4, B.1}, ...]`.
+
+---
+
+## 📦 Trạm 3: Nén & Lưu Trữ (Algorithm 4)
+> **Mục tiêu**: Chuyển đổi dữ liệu từ dạng "Instance" (cụ thể) sang dạng "Feature" (tổng quát) để tính toán thống kê.
+
+*   **File Code**: [cliquecoloc/chash.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/chash.py)
+*   **Chi tiết tại**: [ALGORITHM_4_EXPLANATION.md](ALGORITHM_4_EXPLANATION.md)
+
+**Luồng Dữ Liệu**:
+1.  Nhận clique `{C.1, D.1}`.
+2.  Trích xuất Feature: `{"C", "D"}`.
+3.  Lưu vào Hash Table nén:
+    *   Key: `{"C", "D"}`
+    *   Value: Gom `C.1` vào thùng C, `D.1` vào thùng D.
+
+**Output Trạm 3**: Object [CHash](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/chash.py#10-71) (Bảng tra cứu tối ưu O(1)).
+
+---
+
+## 🎯 Trạm 4: Tính Toán & Sàng Lọc (Algorithm 5 & 6)
+> **Mục tiêu**: Quyết định xem nhóm nào là "Phổ biến" (Prevalent) dựa trên ngưỡng 0.6.
+
+*   **File Code**: [cliquecoloc/prevalence.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/prevalence.py)
+*   **Chi tiết tại**: [ALGORITHM_5_6_EXPLANATION.md](ALGORITHM_5_6_EXPLANATION.md)
+
+**Luồng Dữ Liệu**:
+1.  **Algorithm 6 (Tính điểm)**:
+    *   Lấy pattern `{C, D}` từ C-Hash.
+    *   Đếm: Có 1 ông C, 1 ông D tham gia trên tổng số 4 ông C, 3 ông D.
+    *   Điểm số (PI) = [min(1/4, 1/3) = 0.25](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#106-165).
+2.  **Algorithm 5 (Lọc)**:
+    *   So sánh: `0.25 < 0.6`. -> **LOẠI** `{C, D}`.
+    *   Xét tiếp `{A, B}`: Điểm `0.6`. -> **GIỮ** `{A, B}`.
+
+**Output Cuối Cùng**: Danh sách các mẫu phổ biến: `[{"A", "B"}]`.
+
+---
+
+## Tóm Tắt Luồng Chảy (The Flow)
+
+```mermaid
+graph TD
+    Data[Dataset CSV] -->|Algorithm 1| NB[NeighborhoodList<br>(SNs/BNs)]
+    NB -->|Algorithm 2 OR 3| Cliques[List of Cliques<br>{C.1, D.1}]
+    Cliques -->|Algorithm 4| CHash[C-Hash Structure<br>Key={C,D}]
+    CHash -->|Algorithm 6| PI[Tính PI<br>0.25]
+    PI -->|Algorithm 5| Result[Kết Quả<br>Loc theo 0.6]
+```
+
+Bạn hãy đọc các file chi tiết theo thứ tự: **1 -> 2/3 -> 4 -> 5/6** để nắm toàn bộ bức tranh.

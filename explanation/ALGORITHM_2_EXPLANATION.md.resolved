@@ -1,0 +1,134 @@
+# Giải Thích Algorithm 2: Instance Driven Schema (IDS)
+
+Tài liệu này giải thích chi tiết code [ids.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py) (Algorithm 2) dựa trên dữ liệu [testDataset.csv](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/data/testDataset.csv) và tích hợp các khái niệm học thuật (Paper Concepts) như định nghĩa trong bài báo gốc của Bao et al. (2019).
+
+---
+
+## 1. Khái Niệm Cốt Lõi (Paper Concepts)
+
+Để hiểu code [ids.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py), ta cần nắm vững 2 khái niệm từ bài báo được hiện thực hóa trực tiếp trong code:
+
+### a. I-Tree Node & Right Sibling (Definition 5)
+Trong bài báo, cấu trúc cây I-Tree được định nghĩa chặt chẽ. Mỗi node không chỉ có quan hệ cha-con mà còn có quan hệ "anh em liền kề bên phải" (**Right Sibling**).
+*   **Ý nghĩa**: Giúp duyệt ngang các node cùng cấp để mở rộng clique mà không cần quay lui.
+*   **Code Mapping**:
+    ```python
+    15:     node_link: Optional["ITreeNode"] = None  # right sibling (Def. 5 trong paper)
+    ```
+
+### b. Lemma 3 (Nguyên lý sinh ứng viên)
+Bài báo chứng minh rằng để tạo ra clique kích thước `k+1` từ clique `k`, ta chỉ cần xét các ứng viên thỏa mãn:
+1.  Là hàng xóm lớn (**BNs**) của node hiện tại.
+2.  Nằm trong tập **Right Siblings** của các node anh em (để đảm bảo tính liên thông và thứ tự).
+
+---
+
+## 2. Cấu Trúc Dữ Liệu ITree (Line 10-33)
+
+### Code
+```python
+18: class ITree:
+19:     def __init__(self) -> None:
+20:         # root: node gốc, instance=None
+21:         self.root = ITreeNode(instance=None)
+```
+*   **Giải thích**: Cây I-Tree bắt đầu bằng node ảo `root`.
+
+---
+
+## 3. Hàm Chính: [mine_cliques_ids](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#106-165) (Line 106-164)
+
+### Code (Vòng lặp Head-Node)
+```python
+123:     for s in dataset.instances:
+            # ...
+127:         head = itree.add_head_node(s)
+128:         queue.append(head)
+```
+
+### Data Trace: Xét `s = C.1 (5, 4)`
+1.  **Line 127**: Tạo [head_node(C.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#23-34) là con trực tiếp của `root`.
+2.  **Line 128**: Thêm [head_node(C.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#23-34) vào hàng đợi `queue`.
+3.  **Hàng đợi**: `[C.1]`.
+
+---
+
+## 4. Mở Rộng Cây (BFS) & Lemma 3 (Line 130-160)
+
+Thuật toán dùng BFS để mở rộng từng tầng của cây.
+
+### Bước 4a: Tìm Children theo Lemma 3 (Hàm [_get_children](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#55-91))
+
+Đây là nơi hiện thực hóa **Lemma 3**.
+
+```python
+55: def _get_children(node: ITreeNode, nbs: NeighborhoodList) -> List[Instance]:
+        # ...
+74:     if is_head_node:
+75:         # Trường hợp 1: Node là head-node (con của root)
+76:         candidates = nbs.bns(s)
+77:     else:
+78:         # Trường hợp 2: Node sâu bên trong (theo Lemma 3)
+79:         candidates = nbs.bns(s) & _right_sibling_instances(node)
+```
+
+**Trace cho `C.1`**:
+*   `C.1` là head-node -> Vào nhánh `if` (Line 74).
+*   Lấy `candidates = BNs(C.1)`.
+*   Theo tính toán từ Alg 1 (`min_dist=5`), `D.1 (6,5)` là hàng xóm lớn của `C.1`.
+*   -> **Kết quả**: `[D.1]`.
+
+### Bước 4b: Tạo Node con & Link Right Sibling (Line 146-159)
+
+Nếu tìm thấy ứng viên (D.1), ta tạo node con mới và nối dây liên kết (node_link) nếu có nhiều anh em.
+
+```python
+148:             for inst in children_instances:       # inst = D.1
+149:                 node = ITreeNode(instance=inst, parent=curr)
+150:                 curr.children.append(node)
+```
+*   **Cây I-Tree**: `root -> C.1 -> D.1`.
+*   **Hàng đợi**: `[D.1]`.
+
+### Bước 4c: Mở rộng [node(D.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#23-34) (Tiếp tục BFS)
+*   Lấy `D.1` ra khỏi queue.
+*   Gọi [_get_children(D.1)](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#55-91). Giờ nó không phải head-node nữa.
+*   Chạy dòng 79: `BNs(D.1) & RS(...)`.
+    *   `BNs(D.1)`: Rỗng (D.1 là lớn nhất trong đám).
+*   -> **Kết quả**: Rỗng. Dừng mở rộng.
+
+---
+
+## 5. Thu Hoạch (Line 137-143)
+
+Khi nhánh cây ngừng phát triển, đó là một **Maximal Clique**.
+
+```python
+138:             if not children_instances:
+139:                 clique = _collect_clique(curr)
+```
+*   Thu hoạch từ `D.1` -> `C.1`.
+*   Kết quả Clique: **`{C.1, D.1}`**.
+
+---
+
+## 6. Tại Sao Cần [_right_sibling_instances](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#36-53)?
+
+Hàm này chính là hiện thực của định nghĩa **Right Sibling (Def. 5)** trong paper.
+
+```python
+36: def _right_sibling_instances(node: ITreeNode) -> Set[Instance]:
+44:     siblings = node.parent.children
+45:     idx = siblings.index(node)
+48:     for sib in siblings[idx + 1:]: # Chỉ lấy các anh em bên phải
+            # ...
+```
+
+**Mục đích**:
+Để đảm bảo rằng khi ta ghép `A-B` với `C` để thành `A-B-C`, thì `C` phải là "anh em phải" của `B` trong cây. Điều này đảm bảo tính thứ tự **duy nhất** của quá trình sinh clique, ngăn chặn việc sinh ra trùng lặp như `A-C-B`.
+
+## Tổng Kết
+Code [ids.py](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py) là một bản chuyển ngữ trực tiếp từ lý thuyết (Paper) sang Python:
+*   **Definition 5** -> `node.node_link` và hàm [_right_sibling_instances](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#36-53).
+*   **Lemma 3** -> Logic `BNs & RS` trong hàm [_get_children](file:///e:/A%20clique-based%20approach%20for%20co-location%20pattern%20mining/cliquecoloc/ids.py#55-91).
+*   **BFS Queue** -> Cơ chế duyệt cây theo tầng để tìm mọi clique.
